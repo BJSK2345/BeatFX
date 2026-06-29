@@ -428,6 +428,7 @@
   function paintCell(r, s, on) {
     const c = cells[r][s];
     if (!c) return;
+    c.classList.remove('note-start', 'note-mid', 'note-end', 'note-single');
     if (on) {
       const col = current().color;
       c.classList.add('active');
@@ -440,18 +441,64 @@
     }
   }
 
+  function refreshCellShape(r, s, p = patt(current())) {
+    const c = cells[r]?.[s];
+    if (!c || !p.has(r + '_' + s)) return;
+    const prev = s > 0 && p.has(r + '_' + (s - 1));
+    const next = s < steps - 1 && p.has(r + '_' + (s + 1));
+    c.classList.add(!prev && !next ? 'note-single' : !prev ? 'note-start' : !next ? 'note-end' : 'note-mid');
+  }
+
+  function refreshRowShapes(r) {
+    const p = patt(current());
+    for (let s = 0; s < steps; s++) refreshCellShape(r, s, p);
+  }
+
   function setCell(r, s, on) {
     const slot = current(), key = r + '_' + s, p = patt(slot);
     if (on) p.add(key); else p.delete(key);
     paintCell(r, s, on);
+    for (let x = Math.max(0, s - 1); x <= Math.min(steps - 1, s + 1); x++) {
+      paintCell(r, x, p.has(r + '_' + x));
+      refreshCellShape(r, x, p);
+    }
     updateSlotDot(slot);
+  }
+
+  function setRowRange(r, a, b, on) {
+    const slot = current(), p = patt(slot);
+    const lo = clamp(0, steps - 1, Math.min(a, b));
+    const hi = clamp(0, steps - 1, Math.max(a, b));
+    for (let s = lo; s <= hi; s++) {
+      const key = r + '_' + s;
+      if (on) p.add(key); else p.delete(key);
+      paintCell(r, s, on);
+    }
+    for (let s = Math.max(0, lo - 1); s <= Math.min(steps - 1, hi + 1); s++) {
+      paintCell(r, s, p.has(r + '_' + s));
+      refreshCellShape(r, s, p);
+    }
+    updateSlotDot(slot);
+  }
+
+  function noteRunAt(r, s, p = patt(current())) {
+    if (!p.has(r + '_' + s)) return { start: s, end: s, active: false };
+    let start = s, end = s;
+    while (start > 0 && p.has(r + '_' + (start - 1))) start--;
+    while (end < steps - 1 && p.has(r + '_' + (end + 1))) end++;
+    return { start, end, active: true, length: end - start + 1 };
+  }
+
+  function isRunStart(p, r, s) {
+    return p.has(r + '_' + s) && (s === 0 || !p.has(r + '_' + (s - 1)));
   }
 
   function refreshGrid() {
     const p = patt(current());
-    for (let r = 0; r < ROWS; r++)
-      for (let s = 0; s < steps; s++)
-        paintCell(r, s, p.has(r + '_' + s));
+    for (let r = 0; r < ROWS; r++) {
+      for (let s = 0; s < steps; s++) paintCell(r, s, p.has(r + '_' + s));
+      for (let s = 0; s < steps; s++) refreshCellShape(r, s, p);
+    }
   }
 
   /* ----- Sidebar channels (with mute) ----- */
@@ -611,18 +658,26 @@
   /* ===================================================================== */
   /*                            AUDIO PLAYBACK                             */
   /* ===================================================================== */
-  function playVoice(slot, midi, time) {
+  function playVoice(slot, midi, time, holdSteps = 1) {
     const src = ctx.createBufferSource();
     src.buffer = slot.buffer;
     const target = midi + keyOffset + slot.pitch;
-    src.playbackRate.value = Math.pow(2, (target - ROOT_NOTE) / 12);
+    const rate = Math.pow(2, (target - ROOT_NOTE) / 12);
+    src.playbackRate.value = rate;
+    const holdDur = Math.max(secondsPerStep(), holdSteps * secondsPerStep());
+    const naturalDur = slot.buffer.duration / rate;
+    const playDur = Math.max(0.02, Math.min(holdDur, naturalDur));
     const g = ctx.createGain();
     g.gain.setValueAtTime(0, time);
     g.gain.linearRampToValueAtTime(1, time + 0.004);
+    if (playDur > 0.025) {
+      g.gain.setValueAtTime(1, time + Math.max(0.004, playDur - 0.018));
+      g.gain.linearRampToValueAtTime(0, time + playDur);
+    }
     src.connect(g);
     g.connect(slot.filterNode);
     src.start(time);
-    src.stop(time + slot.buffer.duration / src.playbackRate.value + 0.05);
+    src.stop(time + playDur + 0.02);
   }
 
   function scheduleNote(step, time) {
@@ -633,8 +688,10 @@
       if (!p.size) continue;
       for (const key of p) {
         const u = key.indexOf('_');
+        const r = +key.slice(0, u);
         const s = +key.slice(u + 1);
-        if (s === step && s < steps) playVoice(slot, rowToMidi(+key.slice(0, u)), time);
+        if (s !== step || s >= steps || !isRunStart(p, r, s)) continue;
+        playVoice(slot, rowToMidi(r), time, noteRunAt(r, s, p).length);
       }
     }
   }
@@ -802,18 +859,26 @@
           if (!p.size) continue;
           for (const key of p) {
             const u = key.indexOf('_');
+            const r = +key.slice(0, u);
             const s = +key.slice(u + 1);
-            if (s !== step || s >= steps) continue;
-            const midi = rowToMidi(+key.slice(0, u));
+            if (s !== step || s >= steps || !isRunStart(p, r, s)) continue;
+            const midi = rowToMidi(r);
             const src = off.createBufferSource();
             src.buffer = slot.buffer;
-            src.playbackRate.value = Math.pow(2, (midi + keyOffset + slot.pitch - ROOT_NOTE) / 12);
+            const rate = Math.pow(2, (midi + keyOffset + slot.pitch - ROOT_NOTE) / 12);
+            src.playbackRate.value = rate;
+            const holdDur = Math.max(sps, noteRunAt(r, s, p).length * sps);
+            const playDur = Math.max(0.02, Math.min(holdDur, slot.buffer.duration / rate));
             const vg = off.createGain();
             vg.gain.setValueAtTime(0, t);
             vg.gain.linearRampToValueAtTime(1, t + 0.004);
+            if (playDur > 0.025) {
+              vg.gain.setValueAtTime(1, t + Math.max(0.004, playDur - 0.018));
+              vg.gain.linearRampToValueAtTime(0, t + playDur);
+            }
             src.connect(vg); vg.connect(inputs.get(slot.id));
             src.start(t);
-            src.stop(t + slot.buffer.duration / src.playbackRate.value + 0.05);
+            src.stop(t + playDur + 0.02);
           }
         }
       }
@@ -1488,22 +1553,63 @@
     $('save').addEventListener('click', saveProject);
     $('export').addEventListener('click', exportWav);
 
-    // Grid: click + drag painting (delegated, survives rebuilds)
+    // Grid: drag across a row to create or resize held note rectangles.
     const grid = $('grid');
-    grid.addEventListener('mousedown', (e) => {
+    let dragNote = null;
+    const cellFromPoint = (x, y) => document.elementFromPoint(x, y)?.closest?.('.cell');
+    const applyDragNote = (toStep) => {
+      if (!dragNote) return;
+      if (dragNote.lastStart !== null) setRowRange(dragNote.row, dragNote.lastStart, dragNote.lastEnd, false);
+      setRowRange(dragNote.row, dragNote.clearStart, dragNote.clearEnd, false);
+      setRowRange(dragNote.row, dragNote.anchor, toStep, true);
+      dragNote.lastStart = Math.min(dragNote.anchor, toStep);
+      dragNote.lastEnd = Math.max(dragNote.anchor, toStep);
+    };
+    grid.addEventListener('pointerdown', (e) => {
       const c = e.target.closest('.cell'); if (!c) return;
       e.preventDefault();
-      const r = +c.dataset.r, s = +c.dataset.s;
-      paintValue = !patt(current()).has(r + '_' + s);
-      isPainting = true;
-      setCell(r, s, paintValue);
+      resumeAudio();
+      const row = +c.dataset.r, step = +c.dataset.s;
+      const run = noteRunAt(row, step);
+      if (e.button === 2 || e.ctrlKey) {
+        setRowRange(row, run.active ? run.start : step, run.active ? run.end : step, false);
+        dragNote = { row, erase: true };
+        try { grid.setPointerCapture(e.pointerId); } catch (err) {}
+        return;
+      }
+      dragNote = {
+        row,
+        anchor: run.active ? run.start : step,
+        clearStart: run.active ? run.start : step,
+        clearEnd: run.active ? run.end : step,
+        lastStart: null,
+        lastEnd: null
+      };
+      try { grid.setPointerCapture(e.pointerId); } catch (err) {}
+      applyDragNote(step);
     });
-    grid.addEventListener('mouseover', (e) => {
-      if (!isPainting) return;
-      const c = e.target.closest('.cell'); if (!c) return;
-      setCell(+c.dataset.r, +c.dataset.s, paintValue);
+    grid.addEventListener('pointermove', (e) => {
+      if (!dragNote) return;
+      const c = cellFromPoint(e.clientX, e.clientY);
+      if (!c || +c.dataset.r !== dragNote.row) return;
+      const step = +c.dataset.s;
+      if (dragNote.erase) {
+        const run = noteRunAt(dragNote.row, step);
+        setRowRange(dragNote.row, run.active ? run.start : step, run.active ? run.end : step, false);
+        return;
+      }
+      applyDragNote(step);
     });
-    document.addEventListener('mouseup', () => { isPainting = false; });
+    const finishDragNote = (e) => {
+      if (!dragNote) return;
+      try { grid.releasePointerCapture(e.pointerId); } catch (err) {}
+      dragNote = null;
+    };
+    grid.addEventListener('contextmenu', (e) => {
+      if (e.target.closest('.cell')) e.preventDefault();
+    });
+    grid.addEventListener('pointerup', finishDragNote);
+    grid.addEventListener('pointercancel', finishDragNote);
 
     // Import + drag & drop
     const drop = $('drop'), file = $('file');
