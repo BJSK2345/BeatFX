@@ -64,12 +64,18 @@
   .note-label.octave{ color:#2eb6ff; font-weight:600; }
 
   /* Sequencer cells */
-  .cell{ height:22px; border-right:1px solid #1f1f1f; border-bottom:1px solid #1f1f1f; cursor:pointer; }
+  .cell{ height:22px; border-right:1px solid #1f1f1f; border-bottom:1px solid #1f1f1f; cursor:crosshair; position:relative; touch-action:none; }
   .cell.black{ background:rgba(255,255,255,.018); }
   .cell.beat{ border-right:1px solid #313131; }
   .cell.octave{ border-top:1px solid #2c2c2c; }
   .cell:hover{ background:rgba(255,255,255,.08); }
-  .cell.active{ background:#2eb6ff; }
+  .cell.active{ background:#2eb6ff; border-right-color:rgba(255,255,255,.08); }
+  .cell.active.note-single{ border-radius:6px; transform:scale(.86,.72); }
+  .cell.active.note-start{ border-radius:6px 0 0 6px; transform:scaleY(.72); }
+  .cell.active.note-mid{ border-radius:0; transform:scaleY(.72); }
+  .cell.active.note-end{ border-radius:0 6px 6px 0; transform:scaleY(.72); }
+  .cell.active.note-start,
+  .cell.active.note-mid{ border-right-color:transparent; }
 
   #playLine{ position:absolute; top:0; bottom:0; width:2px; left:0; opacity:.35;
              background:#ffffff; box-shadow:0 0 12px #2eb6ff,0 0 4px #fff;
