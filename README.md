@@ -20,25 +20,6 @@ npx serve -l 8123 .
 
 Then open <http://localhost:8123>.
 
-## Deploy to Vercel
-
-There is **no backend** — BeatFX is 100% client-side, so it deploys as a static site.
-
-**Option A — Vercel CLI**
-```bash
-npm i -g vercel
-vercel          # preview deploy
-vercel --prod   # production deploy
-```
-
-**Option B — Git import**
-1. Push this folder to a GitHub/GitLab/Bitbucket repo.
-2. In Vercel, **Add New… → Project** and import the repo.
-3. Framework Preset: **Other**. Build Command: *(leave empty)*. Output Directory: `.` (root).
-4. Deploy.
-
-`vercel.json` is included and sets clean URLs plus sensible security headers. No environment variables are required.
-
 ## Files
 - `index.html` — markup + Tailwind (via CDN) + styles
 - `script.js` — the entire audio engine, sequencer, arranger, tutorial and pre-made songs
