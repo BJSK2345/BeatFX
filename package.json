@@ -1,0 +1,12 @@
+{
+  "name": "beatfx",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BeatFX — a native Web Audio API DAW: a step-sequencer Studio plus a song Arranger (Create Tab). Pure static front-end, no build step.",
+  "scripts": {
+    "dev": "npx --yes serve -l 8123 .",
+    "start": "npx --yes serve -l 8123 ."
+  },
+  "keywords": ["web-audio", "daw", "music", "sequencer", "vercel-static"],
+  "license": "MIT"
+}

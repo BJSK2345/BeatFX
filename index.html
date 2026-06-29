@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BeatFX — Web Audio DAW</title>
+
+<!-- Tailwind CSS via CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          base:   '#181818',
+          panel:  '#242424',
+          line:   '#2e2e2e',
+          accent: '#2eb6ff',
+          accent2:'#00e676',
+          accent3:'#ff7a18'
+        },
+        fontFamily: { sans: ['Inter', 'Segoe UI', 'system-ui', 'sans-serif'] }
+      }
+    }
+  };
+</script>
+
+<style>
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{ margin:0; background:#181818; color:#d4d4d4;
+        font-family:Inter,Segoe UI,system-ui,sans-serif; overflow:hidden; }
+
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-track{ background:#181818; }
+  ::-webkit-scrollbar-thumb{ background:#333; border-radius:6px; border:2px solid #181818; }
+  ::-webkit-scrollbar-thumb:hover{ background:#444; }
+
+  /* Range sliders */
+  input[type=range].slider{
+    -webkit-appearance:none; appearance:none; width:100%;
+    height:6px; border-radius:4px; background:#161616; border:1px solid #2e2e2e; outline:none; }
+  input[type=range].slider::-webkit-slider-thumb{
+    -webkit-appearance:none; width:15px; height:15px; border-radius:50%;
+    background:var(--accent,#2eb6ff); cursor:pointer; border:2px solid #0c0c0c;
+    box-shadow:0 0 8px var(--accent,#2eb6ff); }
+  input[type=range].slider::-moz-range-thumb{
+    width:15px; height:15px; border-radius:50%;
+    background:var(--accent,#2eb6ff); cursor:pointer; border:2px solid #0c0c0c;
+    box-shadow:0 0 8px var(--accent,#2eb6ff); }
+
+  /* Step header numbers */
+  #stepHead{ height:24px; }
+  .step-h{ display:flex; align-items:center; justify-content:center; font-size:10px;
+           color:#5e5e5e; border-right:1px solid #232323; }
+  .step-h.beat{ color:#9aa0a6; border-right:1px solid #353535; }
+
+  /* Piano key labels */
+  .note-label{ height:22px; display:flex; align-items:center; justify-content:flex-end;
+               padding-right:8px; font-size:10px; border-bottom:1px solid #1f1f1f;
+               border-right:1px solid #2e2e2e; user-select:none; }
+  .note-label.white{ background:#222; color:#bbb; }
+  .note-label.black{ background:#191919; color:#777; }
+  .note-label.octave{ color:#2eb6ff; font-weight:600; }
+
+  /* Sequencer cells */
+  .cell{ height:22px; border-right:1px solid #1f1f1f; border-bottom:1px solid #1f1f1f; cursor:pointer; }
+  .cell.black{ background:rgba(255,255,255,.018); }
+  .cell.beat{ border-right:1px solid #313131; }
+  .cell.octave{ border-top:1px solid #2c2c2c; }
+  .cell:hover{ background:rgba(255,255,255,.08); }
+  .cell.active{ background:#2eb6ff; }
+
+  #playLine{ position:absolute; top:0; bottom:0; width:2px; left:0; opacity:.35;
+             background:#ffffff; box-shadow:0 0 12px #2eb6ff,0 0 4px #fff;
+             pointer-events:none; transition:opacity .2s; }
+
+  /* Sample slots */
+  .slot{ width:100%; text-align:left; padding:7px 9px; border-radius:7px; display:flex;
+         align-items:center; gap:9px; border:1px solid transparent; color:#cfcfcf;
+         background:transparent; cursor:pointer; font-size:13px; }
+  .slot:hover{ background:rgba(255,255,255,.05); }
+  .slot.sel{ background:rgba(46,182,255,.12); border-color:#2eb6ff; color:#fff; }
+  .slot .dotc{ width:10px; height:10px; border-radius:50%; flex:none; box-shadow:0 0 6px currentColor; }
+  .slot .nm{ flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .slot .hasdot{ width:6px; height:6px; border-radius:50%; background:#00e676;
+                 box-shadow:0 0 6px #00e676; opacity:0; transition:opacity .15s; flex:none; }
+  .slot .mute{ flex:none; width:20px; height:20px; border-radius:5px; border:1px solid #2e2e2e;
+               background:#1a1a1a; color:#777; font-size:10px; font-weight:700; line-height:1;
+               display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .slot .mute:hover{ color:#fff; border-color:#3a3a3a; }
+  .slot.muted .nm, .slot.muted .dotc{ opacity:.4; }
+  .slot.muted .mute{ background:#ff4d6d; border-color:#ff4d6d; color:#150405; box-shadow:0 0 8px rgba(255,77,109,.5); }
+
+  /* Layer tabs */
+  #layerBar{ scrollbar-width:none; }
+  #layerBar::-webkit-scrollbar{ height:0; }
+  .layer-tab{ display:flex; align-items:center; gap:6px; padding:4px 9px; border-radius:6px 6px 0 0;
+              border:1px solid #2e2e2e; border-bottom:none; background:#1c1c1c; color:#9aa0a6;
+              font-size:12px; cursor:pointer; white-space:nowrap; user-select:none; }
+  .layer-tab:hover{ color:#e6e6e6; }
+  .layer-tab.active{ background:#2c2c2c; color:#fff; border-color:#2eb6ff; box-shadow:0 0 10px rgba(46,182,255,.25); }
+  .layer-tab .lclose{ font-size:13px; color:#666; line-height:1; }
+  .layer-tab .lclose:hover{ color:#ff4d6d; }
+  .layer-add{ flex:none; width:26px; height:26px; border-radius:6px; border:1px dashed #3a3a3a;
+              background:transparent; color:#888; cursor:pointer; font-size:15px; line-height:1; }
+  .layer-add:hover{ border-color:#2eb6ff; color:#2eb6ff; }
+
+  /* Transport buttons (studio) */
+  .tbtn{ width:38px; height:34px; display:flex; align-items:center; justify-content:center;
+         border-radius:7px; border:1px solid #2e2e2e; background:#1c1c1c; color:#cfcfcf; cursor:pointer; }
+  .tbtn:hover{ border-color:#3a3a3a; color:#fff; }
+  .tbtn.on{ border-color:#00e676; color:#00e676; box-shadow:0 0 10px rgba(0,230,118,.35); }
+
+  .bounce-btn{ padding:4px 10px; border-radius:6px; font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+               background:rgba(0,230,118,.12); border:1px solid #00e676; color:#00e676; cursor:pointer; }
+  .bounce-btn:hover{ background:rgba(0,230,118,.22); box-shadow:0 0 10px rgba(0,230,118,.35); }
+
+  #drop.drag{ border-color:#2eb6ff; color:#2eb6ff; background:rgba(46,182,255,.06); }
+
+  /* ---------- Nav rail ---------- */
+  #rail{ width:56px; transition:width .18s ease; overflow:hidden; }
+  #rail.expanded{ width:206px; }
+  .rail-item{ display:flex; align-items:center; gap:15px; padding:11px 17px; color:#9aa0a6;
+              cursor:pointer; background:transparent; border:none; width:100%; text-align:left; }
+  .rail-item:hover{ color:#fff; background:rgba(255,255,255,.05); }
+  .rail-item.active{ color:#2eb6ff; box-shadow:inset 2px 0 0 #2eb6ff; background:rgba(46,182,255,.08); }
+  .rail-item svg{ flex:none; }
+  .rail-label{ font-size:13px; white-space:nowrap; opacity:0; transition:opacity .15s; }
+  #rail.expanded .rail-label{ opacity:1; }
+
+  /* ---------- Add-sound dropdown ---------- */
+  #addSoMenu{ z-index:40; width:270px; background:#1c1c1c; border:1px solid #2e2e2e; border-radius:8px;
+              box-shadow:0 12px 40px rgba(0,0,0,.6); padding:6px; }
+  .so-row{ display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:6px; cursor:pointer; }
+  .so-row:hover{ background:rgba(255,255,255,.06); }
+  .so-swatch{ width:12px; height:12px; border-radius:3px; flex:none; box-shadow:0 0 6px currentColor; }
+  .so-name{ flex:1; font-size:13px; color:#e6e6e6; }
+  .so-dur{ font-size:11px; color:#777; }
+  .so-del{ font-size:13px; opacity:.55; padding:0 2px; }
+  .so-del:hover{ opacity:1; }
+  .so-empty{ padding:16px; text-align:center; color:#777; font-size:12px; line-height:1.6; }
+
+  /* ---------- Arranger clips ---------- */
+  .clip{ position:absolute; border-radius:8px; display:flex; align-items:center; justify-content:center;
+         font-size:12px; font-weight:600; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.55);
+         cursor:grab; user-select:none; overflow:hidden; box-shadow:0 3px 10px rgba(0,0,0,.45);
+         border:1px solid rgba(255,255,255,.2); touch-action:none; }
+  .clip.dragging{ cursor:grabbing; box-shadow:0 0 0 2px #fff,0 6px 18px rgba(0,0,0,.5); z-index:5; }
+  .clip-name{ pointer-events:none; padding:0 13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .clip-rmv{ position:absolute; left:6px; top:50%; transform:translateY(-50%); width:16px; height:16px;
+             border-radius:50%; background:rgba(0,0,0,.28); display:flex; align-items:center; justify-content:center;
+             font-size:13px; line-height:1; opacity:0; transition:opacity .12s; cursor:pointer; }
+  .clip:hover .clip-rmv{ opacity:1; }
+  .clip-rsz{ position:absolute; right:0; top:0; bottom:0; width:11px; cursor:ew-resize;
+             background:linear-gradient(to right, transparent, rgba(0,0,0,.2)); }
+
+  .arr-playline{ position:absolute; top:0; width:2px; background:#fff; box-shadow:0 0 10px #2eb6ff,0 0 4px #fff;
+                 left:0; z-index:6; pointer-events:none; }
+  .arr-tl-label{ position:sticky; left:0; padding:5px 12px; font-size:11px; color:#888;
+                 text-transform:uppercase; letter-spacing:.06em; background:#161616; width:max-content; }
+  .ruler-tick{ position:absolute; top:0; bottom:0; padding-left:6px; font-size:11px; color:#8a8a8a;
+               border-left:1px solid #2e2e2e; display:flex; align-items:center; }
+  #ruler{ height:100%; }
+
+  .arr-tbtn{ width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+             color:#cfcfcf; background:transparent; border:none; cursor:pointer; }
+  .arr-tbtn:hover{ color:#fff; }
+  .arr-play{ width:54px; height:54px; border:2px solid #cfcfcf; }
+  .arr-play:hover{ border-color:#2eb6ff; color:#2eb6ff; }
+  .arr-play.on{ border-color:#00e676; color:#00e676; box-shadow:0 0 14px rgba(0,230,118,.4); }
+
+  /* Bottom timeline + glider */
+  #arrRulerWrap{ height:42px; }
+  #rulerTicks{ position:absolute; top:0; left:0; height:100%; }
+  #arrGlider{ position:absolute; top:0; height:100%; width:16px; margin-left:-8px; cursor:ew-resize; z-index:9; }
+  #arrGlider::before{ content:''; position:absolute; left:7px; top:0; width:2px; height:100%; background:#fff; box-shadow:0 0 8px #2eb6ff; }
+  #arrGlider::after{ content:''; position:absolute; left:2px; top:-1px; border-left:6px solid transparent; border-right:6px solid transparent; border-top:9px solid #fff; filter:drop-shadow(0 0 4px #2eb6ff); }
+  .arr-tl-label{ position:absolute; left:0; top:0; height:100%; display:flex; align-items:center; padding:0 12px;
+                 font-size:11px; color:#888; text-transform:uppercase; letter-spacing:.06em;
+                 background:#161616; z-index:11; border-right:1px solid #2e2e2e; }
+
+  /* Top buttons (Pre-made / Tutorial) */
+  .top-btn{ display:flex; align-items:center; gap:7px; padding:6px 11px; border-radius:8px; border:1px solid #2e2e2e;
+            background:#1c1c1c; color:#cfcfcf; font-size:13px; cursor:pointer; white-space:nowrap; }
+  .top-btn:hover{ border-color:#2eb6ff; color:#fff; }
+
+  /* Pre-made songs menu */
+  .menu-pop{ position:fixed; z-index:45; background:#1c1c1c; border:1px solid #2e2e2e; border-radius:9px;
+             box-shadow:0 14px 44px rgba(0,0,0,.6); padding:6px; min-width:248px; }
+  .pm-row{ display:flex; align-items:center; gap:11px; padding:9px 10px; border-radius:7px; cursor:pointer; }
+  .pm-row:hover{ background:rgba(255,255,255,.06); }
+  .pm-ico{ width:30px; height:30px; border-radius:7px; flex:none; display:flex; align-items:center; justify-content:center; font-size:15px; }
+  .pm-name{ flex:1; font-size:13px; color:#ececec; font-weight:600; line-height:1.2; }
+  .pm-sub{ font-size:11px; color:#7d7d7d; font-weight:400; }
+
+  /* Tutorial spotlight + tooltip */
+  #tourSpot{ position:fixed; z-index:60; border:2px solid #2eb6ff; border-radius:9px;
+             box-shadow:0 0 0 9999px rgba(8,8,8,.7); pointer-events:none; transition:all .25s ease; }
+  #tourTip{ position:fixed; z-index:61; width:300px; background:#1e1e1e; border:1px solid #2eb6ff;
+            border-radius:11px; padding:16px 17px; box-shadow:0 18px 54px rgba(0,0,0,.65); }
+  #tourTip h4{ margin:0 0 7px; font-size:15px; color:#fff; }
+  #tourTip p{ margin:0; font-size:13px; color:#bcbcbc; line-height:1.55; }
+  .tt-bar{ display:flex; align-items:center; gap:8px; margin-top:15px; }
+  .tt-step{ flex:1; font-size:11px; color:#777; }
+  .tt-btn{ padding:6px 13px; border-radius:7px; font-size:12px; cursor:pointer; border:1px solid #2e2e2e; background:#262626; color:#ddd; }
+  .tt-btn.primary{ background:#2eb6ff; color:#0c0c0c; border-color:#2eb6ff; font-weight:600; }
+  .tt-btn:hover{ filter:brightness(1.12); }
+
+  /* Toast */
+  #toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(10px);
+          background:#0e0e0e; border:1px solid #2e2e2e; color:#eaeaea; padding:9px 16px;
+          border-radius:8px; font-size:13px; opacity:0; transition:all .25s; pointer-events:none;
+          z-index:50; box-shadow:0 8px 30px rgba(0,0,0,.5); }
+</style>
+</head>
+
+<body class="h-full flex">
+
+  <!-- ===================== NAV RAIL ===================== -->
+  <nav id="rail" class="shrink-0 flex flex-col bg-[#161616] border-r border-line py-2 select-none">
+    <button id="railToggle" class="rail-item" title="Expand / collapse">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg>
+      <span class="rail-label font-bold tracking-wide">BEAT<span class="text-accent">FX</span></span>
+    </button>
+    <div class="h-2"></div>
+    <button id="navStudio" class="rail-item active" title="Studio">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16" stroke-linecap="round"/><circle cx="9" cy="5" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="8" cy="19" r="2" fill="currentColor"/></svg>
+      <span class="rail-label">Studio</span>
+    </button>
+    <button id="navCreate" class="rail-item" title="Create Tab">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5"  width="11" height="3" rx="1.5" fill="currentColor" stroke="none"/><rect x="7" y="10" width="14" height="3" rx="1.5" fill="currentColor" stroke="none"/><rect x="3" y="15" width="9"  height="3" rx="1.5" fill="currentColor" stroke="none"/></svg>
+      <span class="rail-label">Create Tab</span>
+    </button>
+    <div class="flex-1"></div>
+    <div class="rail-item" style="cursor:default">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      <span class="rail-label">Objects: <span id="soCount" class="text-accent2 font-semibold">0</span></span>
+    </div>
+  </nav>
+
+  <!-- ===================== CONTENT (Studio + Create) ===================== -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- ============ STUDIO VIEW ============ -->
+    <div id="studioView" class="flex-1 flex flex-col min-h-0">
+
+      <!-- Header bar -->
+      <header class="h-14 flex items-center gap-4 px-4 bg-panel border-b border-line shrink-0">
+        <div class="flex items-center gap-2 pr-3 border-r border-line">
+          <div class="w-7 h-7 rounded bg-gradient-to-br from-accent to-accent2 flex items-center justify-center text-black font-black text-[10px]">FX</div>
+          <span class="font-bold tracking-wide select-none">BEAT<span class="text-accent">FX</span></span>
+        </div>
+        <button id="premadeStudio" class="top-btn" title="Load a pre-made song">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          Pre Made Songs
+        </button>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] uppercase tracking-wider text-gray-500">Key</span>
+          <select id="key" class="bg-[#1c1c1c] border border-line rounded px-2 py-1 text-sm focus:border-accent outline-none"></select>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] uppercase tracking-wider text-gray-500">BPM</span>
+          <input id="bpmNum" type="number" min="40" max="240" value="120"
+                 class="w-16 bg-[#1c1c1c] border border-line rounded px-2 py-1 text-sm text-center focus:border-accent outline-none" />
+          <input id="bpm" type="range" min="40" max="240" value="120" class="slider w-28" style="--accent:#2eb6ff" />
+        </div>
+        <div class="flex items-center gap-2 pl-4 border-l border-line">
+          <button id="play"  class="tbtn" title="Play (Space)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <button id="pause" class="tbtn" title="Pause">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+          </button>
+          <button id="stop"  class="tbtn" title="Stop">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
+          </button>
+        </div>
+        <div class="flex-1"></div>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] uppercase tracking-wider text-gray-500">Master</span>
+          <div class="w-28 h-2.5 bg-[#141414] rounded-full overflow-hidden border border-line">
+            <div id="meter" class="h-full w-0 rounded-full" style="background:linear-gradient(90deg,#00e676,#ffd166,#ff4d6d)"></div>
+          </div>
+        </div>
+        <button id="tutStudio" class="top-btn" title="Interactive tutorial">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .8-1 1.7" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1" fill="currentColor" stroke="none"/></svg>
+          Tutorial
+        </button>
+        <button id="save"   class="px-3 py-1.5 rounded-md bg-[#1c1c1c] border border-line hover:border-accent text-sm">Save</button>
+        <button id="export" class="px-3 py-1.5 rounded-md bg-accent text-black font-semibold text-sm hover:brightness-110">Export WAV</button>
+      </header>
+
+      <!-- Main: sidebar + workspace -->
+      <main class="flex-1 flex min-h-0">
+
+        <aside class="w-60 shrink-0 bg-panel border-r border-line flex flex-col min-h-0">
+          <div class="px-4 py-3 text-xs uppercase tracking-wider text-gray-500 border-b border-line flex items-center justify-between">
+            <span>Samples</span><span id="slotCount" class="text-gray-600"></span>
+          </div>
+          <div id="slots" class="flex-1 overflow-y-auto p-2 space-y-0.5"></div>
+          <div id="drop" class="m-3 mt-2 p-4 border-2 border-dashed border-line rounded-lg text-center text-xs text-gray-400 cursor-pointer hover:border-accent hover:text-accent transition-colors">
+            <div class="text-2xl mb-1 opacity-70">⬇</div>
+            <div class="font-medium">Drag &amp; Drop</div>
+            <div class="text-gray-600 mt-0.5">or click to import sound file</div>
+            <input id="file" type="file" accept="audio/*" class="hidden" />
+          </div>
+        </aside>
+
+        <section class="flex-1 flex flex-col min-h-0">
+          <!-- Panel A : Piano Roll -->
+          <div class="flex-1 flex flex-col min-h-0 bg-[#1d1d1d]">
+            <div class="px-4 py-2 flex items-center gap-4 border-b border-line bg-panel shrink-0">
+              <span class="text-xs uppercase tracking-wider text-gray-400">Piano Roll <span class="text-gray-600">/ Step Sequencer</span></span>
+              <span class="text-[11px] text-gray-500">Editing: <span id="editName" class="text-accent font-medium"></span></span>
+              <div class="flex-1"></div>
+              <div class="flex items-center gap-2">
+                <span class="text-[11px] uppercase tracking-wider text-gray-500">Length</span>
+                <select id="length" class="bg-[#1c1c1c] border border-line rounded px-2 py-1 text-xs focus:border-accent outline-none">
+                  <option value="16">16</option><option value="32">32</option><option value="48">48</option><option value="64">64</option>
+                </select>
+              </div>
+              <button id="clear" class="px-2.5 py-1 rounded bg-[#1c1c1c] border border-line hover:border-accent3 hover:text-accent3 text-[11px] uppercase tracking-wide">Clear</button>
+              <button id="bounce" class="bounce-btn" title="Bounce this layer into a reusable Sound Object">★ Sound Object</button>
+            </div>
+
+            <!-- Layer tabs -->
+            <div id="layerBar" class="flex items-end gap-1 px-3 pt-2 bg-[#1a1a1a] border-b border-line shrink-0 overflow-x-auto"></div>
+
+            <!-- Step header -->
+            <div class="flex shrink-0 bg-[#202020] border-b border-line select-none">
+              <div style="width:70px" class="shrink-0 border-r border-line"></div>
+              <div id="stepHead" class="grid flex-1" style="grid-template-columns:repeat(16,1fr)"></div>
+            </div>
+
+            <!-- Roll body -->
+            <div id="rollScroll" class="flex flex-1 min-h-0 overflow-y-auto select-none">
+              <div id="labels" style="width:70px" class="shrink-0"></div>
+              <div id="gridWrap" class="relative flex-1 overflow-hidden">
+                <div id="grid" class="grid" style="grid-template-columns:repeat(16,1fr);grid-auto-rows:22px"></div>
+                <div id="playLine"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel B : Waveform & Sampler Controller -->
+          <div class="h-[230px] shrink-0 flex bg-panel border-t border-line">
+            <div class="flex-1 p-3 flex flex-col min-w-0 min-h-0">
+              <div class="text-xs uppercase tracking-wider text-gray-400 mb-2">
+                Waveform <span class="text-gray-600">/</span> <span id="wfName" class="text-accent"></span>
+              </div>
+              <div class="flex-1 min-h-0 relative">
+                <canvas id="wave" class="absolute inset-0 w-full h-full rounded-md bg-[#141414] border border-line"></canvas>
+              </div>
+            </div>
+            <div class="w-[380px] shrink-0 p-5 grid grid-cols-2 gap-x-7 gap-y-5 border-l border-line content-center">
+              <div class="flex flex-col gap-1.5">
+                <div class="flex justify-between text-[11px] uppercase tracking-wider text-gray-400">
+                  <span>Tone</span><span id="toneVal" class="font-semibold" style="color:#b388ff">100%</span>
+                </div>
+                <input id="tone" type="range" min="0" max="100" value="100" class="slider" style="--accent:#b388ff" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <div class="flex justify-between text-[11px] uppercase tracking-wider text-gray-400">
+                  <span>Compression</span><span id="compVal" class="font-semibold text-accent3">30%</span>
+                </div>
+                <input id="comp" type="range" min="0" max="100" value="30" class="slider" style="--accent:#ff7a18" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <div class="flex justify-between text-[11px] uppercase tracking-wider text-gray-400">
+                  <span>Pitch</span><span id="pitchVal" class="font-semibold text-accent">0 st</span>
+                </div>
+                <input id="pitch" type="range" min="-12" max="12" value="0" class="slider" style="--accent:#2eb6ff" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <div class="flex justify-between text-[11px] uppercase tracking-wider text-gray-400">
+                  <span>Volume</span><span id="volVal" class="font-semibold text-accent2">80%</span>
+                </div>
+                <input id="vol" type="range" min="0" max="100" value="80" class="slider" style="--accent:#00e676" />
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- ============ CREATE VIEW (song arranger) ============ -->
+    <div id="createView" class="flex-1 flex flex-col min-h-0 hidden">
+
+      <header class="h-14 flex items-center px-5 bg-panel border-b border-line shrink-0 relative gap-3">
+        <button id="premadeCreate" class="top-btn" title="Load a pre-made song">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          Pre Made Songs
+        </button>
+        <div class="relative">
+          <button id="addSo" class="px-3 py-1.5 rounded-md bg-accent text-black font-semibold text-sm hover:brightness-110 flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>Add sound object
+          </button>
+          <div id="addSoMenu" class="hidden absolute left-0 top-full mt-2"></div>
+        </div>
+        <h1 class="absolute left-1/2 -translate-x-1/2 font-bold text-lg tracking-wide select-none">Create<span class="text-accent"> Tab</span></h1>
+        <div class="flex-1"></div>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] uppercase tracking-wider text-gray-500">Length</span>
+          <input id="arrLen" type="number" min="20" max="600" value="120"
+                 class="w-20 bg-[#1c1c1c] border border-line rounded px-2 py-1 text-sm text-center focus:border-accent outline-none" />
+          <span class="text-gray-500 text-sm mr-1">s</span>
+          <button id="exportSong" class="px-3 py-1.5 rounded-md bg-[#1c1c1c] border border-line hover:border-accent text-sm">Export Song</button>
+          <button id="tutCreate" class="top-btn" title="Interactive tutorial">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .8-1 1.7" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1" fill="currentColor" stroke="none"/></svg>
+            Tutorial
+          </button>
+        </div>
+      </header>
+
+      <!-- Track lanes (horizontal scroll) -->
+      <div id="arrScroll" class="flex-1 min-h-0 overflow-auto bg-[#161616]">
+        <div id="arrContent" class="relative" style="width:1680px">
+          <div id="arrTracks" class="relative">
+            <div id="arrClips" class="absolute inset-0"></div>
+          </div>
+          <div id="arrPlay" class="arr-playline"></div>
+        </div>
+      </div>
+
+      <!-- Bottom timeline with draggable glider -->
+      <div id="arrRulerWrap" class="shrink-0 relative overflow-hidden bg-[#161616] border-t border-line">
+        <div id="ruler" class="absolute top-0 left-0 h-full" style="width:1680px">
+          <div id="rulerTicks"></div>
+          <div id="arrGlider" title="Drag to scrub"></div>
+        </div>
+        <div class="arr-tl-label">Timeline</div>
+      </div>
+
+      <!-- Transport -->
+      <div class="h-16 flex items-center justify-center gap-7 bg-panel border-t border-line shrink-0 relative">
+        <button id="arrRew" class="arr-tbtn" title="Rewind to start">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M11 12l8-6v12zM4 6h2v12H4zM6 12l7-6v12z"/></svg>
+        </button>
+        <button id="arrPlayBtn" class="arr-tbtn arr-play" title="Play / Pause">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button id="arrFwd" class="arr-tbtn" title="Forward 10s">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M13 12L5 6v12zM18 6h2v12h-2zM11 12L4 6v12z"/></svg>
+        </button>
+        <div class="absolute right-6 text-xs text-gray-500 font-mono"><span id="arrTime">0:00</span> / <span id="arrTotal">2:00</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="toast"></div>
+
+  <!-- Pre-made songs menu (positioned near the button that opens it) -->
+  <div id="premadeMenu" class="menu-pop hidden"></div>
+
+  <!-- Tutorial overlay -->
+  <div id="tourSpot" style="display:none"></div>
+  <div id="tourTip" style="display:none"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
